@@ -8,7 +8,7 @@ Host a payment gateway without 3rd party services by catching unique amount noti
 
 ## ✨ Features
 
-- **Notification Listener** - Catches notifications from target e-wallet/banking apps
+- **Notification Listener** - Catches notifications from target e-wallet/banking apps using native Android NotificationListenerService
 - **Amount Parser** - Extracts unique amounts from notification text using regex patterns
 - **Transaction Log** - View history of caught transactions
 - **API Integration** - Send caught amounts to your REST API
@@ -33,6 +33,30 @@ Host a payment gateway without 3rd party services by catching unique amount noti
 - Expo CLI
 - EAS CLI (for building)
 - Android device (for testing)
+- **Android Studio** (for local builds) or **EAS Build** (cloud builds)
+
+## 🏗️ Native Module Implementation
+
+This app includes a custom Expo config plugin that implements Android's `NotificationListenerService`:
+
+```
+expo-plugin-notification-listener/
+├── src/
+│   ├── index.ts              # Expo config plugin
+│   └── NotificationListener.ts  # JS interface
+└── android/
+    └── src/main/java/com/paymentprocessor/notificationlistener/
+        ├── NotificationListener.java       # Native service
+        ├── NotificationListenerModule.java # RN Module
+        └── NotificationListenerPackage.java
+```
+
+### How it works:
+
+1. **Expo Config Plugin** - Modifies `AndroidManifest.xml` during prebuild to add the notification listener service
+2. **NotificationListenerService** - Native Android service that catches all notifications
+3. **React Native Module** - Bridges native Java code to JavaScript
+4. **Event Emitters** - Sends notification data to JS in real-time
 
 ## 🚀 Getting Started
 
@@ -42,33 +66,40 @@ Host a payment gateway without 3rd party services by catching unique amount noti
 npm install
 ```
 
-### 2. Configure the App
+### 2. Prebuild Native Code
 
-Open the app settings and enter your API URL:
-- **API URL**: Your server endpoint (e.g., `https://your-api.com`)
-- **API Key**: Optional authentication key
+```bash
+# Generate native Android project with the notification listener
+npx expo prebuild --clean
+```
 
-### 3. Build Development Client
+### 3. Build the App
 
-Since this app requires notification listening permissions, you need to build a development client:
-
+**Option A: Using EAS Build (Cloud)**
 ```bash
 # Install EAS CLI if not already installed
 npm install -g eas-cli
 
 # Build for Android
 eas build --profile development --platform android
+```
 
-# Or build locally with Android Studio
+**Option B: Using Android Studio (Local)**
+```bash
+# Open in Android Studio
 npx expo run:android
 ```
 
 ### 4. Enable Notification Access
 
+**Important:** The app requires special notification access permission.
+
 After installing on your device:
 1. Go to **Settings** > **Apps** > **Special access**
 2. Select **Notification access**
-3. Enable **Payment Processor**
+3. Find and enable **Payment Processor**
+
+The app will show a prompt to open settings automatically.
 
 ### 5. Test with Simulator
 
@@ -113,14 +144,17 @@ payment-processor/
 ├── hooks/                 # React hooks
 ├── utils/                 # Utility functions
 ├── constants/             # App constants & presets
-└── types/                 # TypeScript types
+├── types/                 # TypeScript types
+└── expo-plugin-notification-listener/  # Native module
+    ├── src/               # Plugin & JS interface
+    └── android/           # Native Android code
 ```
 
 ## 🔐 Permissions Required
 
 | Permission | Purpose |
 |------------|---------|
-| `BIND_NOTIFICATION_LISTENER_SERVICE` | Listen to notifications |
+| `BIND_NOTIFICATION_LISTENER_SERVICE` | Listen to notifications (requires user approval in Settings) |
 | `INTERNET` | API calls |
 | `RECEIVE_BOOT_COMPLETED` | Start on boot |
 | `FOREGROUND_SERVICE` | Background operation |
@@ -131,12 +165,22 @@ payment-processor/
 # Start development server
 npx expo start
 
-# Run on Android
-npx expo start:android
+# Run on Android (requires prebuild first)
+npx expo run:android
 
 # Build production APK
 eas build --profile production --platform android
+
+# Regenerate native code after plugin changes
+npx expo prebuild --clean
 ```
+
+## ⚠️ Important Notes
+
+1. **Expo Go won't work** - This app requires a custom development client because of the native notification listener module
+2. **User permission required** - Users must manually enable notification access in Android settings
+3. **Privacy** - The app only processes notifications from apps defined in presets
+4. **Battery optimization** - Some devices may kill background services; add the app to battery optimization exceptions
 
 ## 📄 License
 

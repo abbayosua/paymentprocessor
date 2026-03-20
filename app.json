@@ -48,12 +48,6 @@
           "color": "#1a1a2e",
           "sounds": []
         }
-      ],
-      [
-        "./expo-plugin-notification-listener",
-        {
-          "serviceClassName": "com.paymentprocessor.notificationlistener.NotificationListener"
-        }
       ]
     ],
     "experiments": {

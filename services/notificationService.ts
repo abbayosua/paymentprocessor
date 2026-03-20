@@ -1,22 +1,29 @@
-import { EmitterSubscription } from 'react-native';
+import { EmitterSubscription, NativeModules, NativeEventEmitter } from 'react-native';
 import { CaughtNotification, Transaction, Preset, AppSettings } from '@/types';
 import { storageService } from './storageService';
 import { apiService } from './apiService';
 import { processNotification } from '@/utils/amountParser';
 import { PACKAGE_TO_APP } from '@/constants';
 
-// Import native module
-import NotificationListenerNative, {
-  hasNotificationPermission,
-  openNotificationSettings,
-  isListenerConnected,
-  onNotificationReceived,
-  onListenerConnected,
-  onListenerDisconnected,
-  NotificationData,
-} from '@/expo-plugin-notification-listener/src/NotificationListener';
-
 type NotificationCallback = (transaction: Transaction) => void;
+
+interface NotificationData {
+  packageName: string;
+  title: string;
+  text: string;
+  timestamp: number;
+  id: number;
+  tag: string;
+}
+
+// Native module reference
+const NotificationListener = NativeModules.NotificationListener;
+
+// Event emitter for native events
+let eventEmitter: NativeEventEmitter | null = null;
+if (NotificationListener) {
+  eventEmitter = new NativeEventEmitter(NotificationListener);
+}
 
 /**
  * Notification Listener Service
@@ -36,7 +43,10 @@ class NotificationService {
    */
   async checkPermission(): Promise<boolean> {
     try {
-      return await hasNotificationPermission();
+      if (NotificationListener?.hasPermission) {
+        return await NotificationListener.hasPermission();
+      }
+      return this.isEnabled;
     } catch (error) {
       console.log('Native module not available, using mock');
       return this.isEnabled;
@@ -49,7 +59,9 @@ class NotificationService {
    */
   async requestPermission(): Promise<void> {
     try {
-      await openNotificationSettings();
+      if (NotificationListener?.openSettings) {
+        await NotificationListener.openSettings();
+      }
     } catch (error) {
       console.log('Native module not available');
     }
@@ -60,7 +72,10 @@ class NotificationService {
    */
   async isConnected(): Promise<boolean> {
     try {
-      return await isListenerConnected();
+      if (NotificationListener?.isListenerConnected) {
+        return await NotificationListener.isListenerConnected();
+      }
+      return false;
     } catch (error) {
       return false;
     }
@@ -71,25 +86,38 @@ class NotificationService {
    */
   async startListening(): Promise<void> {
     try {
-      // Subscribe to notification events from native module
-      const notificationSub = onNotificationReceived((data: NotificationData) => {
-        this.handleNativeNotification(data);
-      });
+      if (eventEmitter) {
+        // Subscribe to notification events from native module
+        const notificationSub = eventEmitter.addListener(
+          'onNotificationReceived',
+          (data: NotificationData) => {
+            this.handleNativeNotification(data);
+          }
+        );
 
-      const connectedSub = onListenerConnected(() => {
-        console.log('Notification listener connected');
+        const connectedSub = eventEmitter.addListener(
+          'onListenerConnected',
+          () => {
+            console.log('Notification listener connected');
+            this.isEnabled = true;
+          }
+        );
+
+        const disconnectedSub = eventEmitter.addListener(
+          'onListenerDisconnected',
+          () => {
+            console.log('Notification listener disconnected');
+            this.isEnabled = false;
+          }
+        );
+
+        this.subscriptions = [notificationSub, connectedSub, disconnectedSub];
         this.isEnabled = true;
-      });
-
-      const disconnectedSub = onListenerDisconnected(() => {
-        console.log('Notification listener disconnected');
-        this.isEnabled = false;
-      });
-
-      this.subscriptions = [notificationSub, connectedSub, disconnectedSub];
-      this.isEnabled = true;
-
-      console.log('Notification listener started');
+        console.log('Notification listener started');
+      } else {
+        console.log('Native module not available, using mock mode');
+        this.isEnabled = true;
+      }
     } catch (error) {
       console.log('Native module not available, using mock mode');
       this.isEnabled = true;

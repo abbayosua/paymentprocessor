@@ -1,8 +1,9 @@
 {
   "expo": {
     "name": "Payment Processor",
-    "slug": "payment-processor",
+    "slug": "notificationcatcher",
     "version": "1.0.0",
+    "owner": "chohan123s-organization",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "paymentprocessor",
@@ -49,7 +50,7 @@
         }
       ],
       [
-        "./expo-plugin-notification-listener",
+        "./expo-plugin-notification-listener/index.js",
         {
           "serviceClassName": "com.paymentprocessor.notificationlistener.NotificationListener"
         }

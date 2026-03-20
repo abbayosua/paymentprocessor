@@ -1,23 +1,11 @@
-import { withAndroidManifest, withAppBuildGradle, AndroidConfig } from 'expo/config-plugins.js';
-import type { ConfigPlugin } from 'expo/config-plugins.js';
+const { withAndroidManifest, withAppBuildGradle, AndroidConfig } = require('expo/config-plugins');
 
 const { getMainApplicationOrThrow } = AndroidConfig.Manifest;
-
-export interface NotificationListenerPluginProps {
-  /**
-   * The package name for the notification listener service
-   * @default 'com.paymentprocessor.notificationlistener.NotificationListener'
-   */
-  serviceClassName?: string;
-}
 
 /**
  * Expo Config Plugin for Android Notification Listener Service
  */
-const withNotificationListener: ConfigPlugin<NotificationListenerPluginProps> = (
-  config,
-  props = {}
-) => {
+const withNotificationListener = (config, props = {}) => {
   const serviceClassName =
     props.serviceClassName || 'com.paymentprocessor.notificationlistener.NotificationListener';
 
@@ -51,7 +39,7 @@ const withNotificationListener: ConfigPlugin<NotificationListenerPluginProps> = 
     }
 
     const existingServiceIndex = mainApplication.service.findIndex(
-      (s: any) => s.$['android:name'] === serviceClassName
+      (s) => s.$['android:name'] === serviceClassName
     );
 
     if (existingServiceIndex === -1) {
@@ -83,4 +71,4 @@ const withNotificationListener: ConfigPlugin<NotificationListenerPluginProps> = 
   return config;
 };
 
-export default withNotificationListener;
+module.exports = withNotificationListener;

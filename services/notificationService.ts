@@ -1,55 +1,45 @@
-import { EmitterSubscription, NativeModules, NativeEventEmitter } from 'react-native';
+import { EmitterSubscription } from 'react-native';
 import { CaughtNotification, Transaction, Preset, AppSettings } from '@/types';
 import { storageService } from './storageService';
 import { apiService } from './apiService';
 import { processNotification } from '@/utils/amountParser';
 import { PACKAGE_TO_APP } from '@/constants';
 
+// Import the notification listener library
+import RNAndroidNotificationListener from 'react-native-android-notification-listener';
+
 type NotificationCallback = (transaction: Transaction) => void;
 
 interface NotificationData {
-  packageName: string;
+  app: string;
   title: string;
   text: string;
-  timestamp: number;
-  id: number;
-  tag: string;
-}
-
-// Native module reference
-const NotificationListener = NativeModules.NotificationListener;
-
-// Event emitter for native events
-let eventEmitter: NativeEventEmitter | null = null;
-if (NotificationListener) {
-  eventEmitter = new NativeEventEmitter(NotificationListener);
+  time: string;
 }
 
 /**
  * Notification Listener Service
  *
- * Uses native Android NotificationListenerService to catch notifications
+ * Uses react-native-android-notification-listener to catch notifications
  * Requires:
- * 1. expo-dev-client build (not Expo Go)
+ * 1. Development build (expo prebuild or EAS build)
  * 2. User permission: Settings > Apps > Special access > Notification access
  */
 class NotificationService {
   private callbacks: NotificationCallback[] = [];
   private isEnabled: boolean = false;
-  private subscriptions: EmitterSubscription[] = [];
+  private subscription: EmitterSubscription | null = null;
 
   /**
    * Check if notification listener permission is granted
    */
   async checkPermission(): Promise<boolean> {
     try {
-      if (NotificationListener?.hasPermission) {
-        return await NotificationListener.hasPermission();
-      }
-      return this.isEnabled;
+      const hasPermission = await RNAndroidNotificationListener.getPermissionStatus();
+      return hasPermission === 'authorized';
     } catch (error) {
-      console.log('Native module not available, using mock');
-      return this.isEnabled;
+      console.log('Could not check notification permission:', error);
+      return false;
     }
   }
 
@@ -59,11 +49,13 @@ class NotificationService {
    */
   async requestPermission(): Promise<void> {
     try {
-      if (NotificationListener?.openSettings) {
-        await NotificationListener.openSettings();
+      const hasPermission = await RNAndroidNotificationListener.getPermissionStatus();
+      if (hasPermission !== 'authorized') {
+        // Open notification listener settings
+        await RNAndroidNotificationListener.requestPermission();
       }
     } catch (error) {
-      console.log('Native module not available');
+      console.log('Could not request notification permission:', error);
     }
   }
 
@@ -72,10 +64,8 @@ class NotificationService {
    */
   async isConnected(): Promise<boolean> {
     try {
-      if (NotificationListener?.isListenerConnected) {
-        return await NotificationListener.isListenerConnected();
-      }
-      return false;
+      const hasPermission = await RNAndroidNotificationListener.getPermissionStatus();
+      return hasPermission === 'authorized' && this.isEnabled;
     } catch (error) {
       return false;
     }
@@ -86,41 +76,25 @@ class NotificationService {
    */
   async startListening(): Promise<void> {
     try {
-      if (eventEmitter) {
-        // Subscribe to notification events from native module
-        const notificationSub = eventEmitter.addListener(
-          'onNotificationReceived',
-          (data: NotificationData) => {
-            this.handleNativeNotification(data);
-          }
-        );
-
-        const connectedSub = eventEmitter.addListener(
-          'onListenerConnected',
-          () => {
-            console.log('Notification listener connected');
-            this.isEnabled = true;
-          }
-        );
-
-        const disconnectedSub = eventEmitter.addListener(
-          'onListenerDisconnected',
-          () => {
-            console.log('Notification listener disconnected');
-            this.isEnabled = false;
-          }
-        );
-
-        this.subscriptions = [notificationSub, connectedSub, disconnectedSub];
-        this.isEnabled = true;
-        console.log('Notification listener started');
-      } else {
-        console.log('Native module not available, using mock mode');
-        this.isEnabled = true;
+      const hasPermission = await RNAndroidNotificationListener.getPermissionStatus();
+      
+      if (hasPermission !== 'authorized') {
+        console.log('Notification listener permission not granted');
+        return;
       }
-    } catch (error) {
-      console.log('Native module not available, using mock mode');
+
+      // Subscribe to notification events
+      this.subscription = RNAndroidNotificationListener.onNotificationReceived(
+        (data: NotificationData) => {
+          console.log('Notification received:', data);
+          this.handleNativeNotification(data);
+        }
+      );
+
       this.isEnabled = true;
+      console.log('Notification listener started successfully');
+    } catch (error) {
+      console.log('Could not start notification listener:', error);
     }
   }
 
@@ -128,9 +102,10 @@ class NotificationService {
    * Stop listening for notifications
    */
   stopListening(): void {
-    // Remove all subscriptions
-    this.subscriptions.forEach((sub) => sub.remove());
-    this.subscriptions = [];
+    if (this.subscription) {
+      this.subscription.remove();
+      this.subscription = null;
+    }
     this.isEnabled = false;
     console.log('Notification listener stopped');
   }
@@ -139,19 +114,23 @@ class NotificationService {
    * Handle notification from native module
    */
   private async handleNativeNotification(data: NotificationData): Promise<void> {
-    const presets = await storageService.getPresets();
-    const settings = await storageService.getSettings();
+    try {
+      const presets = await storageService.getPresets();
+      const settings = await storageService.getSettings();
 
-    const notification: CaughtNotification = {
-      id: data.id.toString(),
-      packageName: data.packageName,
-      appName: PACKAGE_TO_APP[data.packageName] || data.packageName,
-      title: data.title,
-      text: data.text,
-      timestamp: data.timestamp,
-    };
+      const notification: CaughtNotification = {
+        id: Date.now().toString(),
+        packageName: data.app || 'unknown',
+        appName: PACKAGE_TO_APP[data.app] || data.app || 'Unknown App',
+        title: data.title || '',
+        text: data.text || '',
+        timestamp: Date.now(),
+      };
 
-    await this.handleNotification(notification, presets, settings);
+      await this.handleNotification(notification, presets, settings);
+    } catch (error) {
+      console.error('Error handling notification:', error);
+    }
   }
 
   /**
@@ -166,7 +145,6 @@ class NotificationService {
 
   /**
    * Process incoming notification
-   * Called by native module when notification is received
    */
   async handleNotification(
     notification: CaughtNotification,
